@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test --test-timeout=15000 server.test.js counters.test.js replay.test.js replay.real.test.js"
+    "test": "node --test --test-timeout=15000 server.test.js counters.test.js replay.test.js replay.real.test.js analyze-session.test.js"
   },
   "engines": {
     "node": ">=20"
