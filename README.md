@@ -82,6 +82,28 @@ code with any phone.
 - **Cues** — knees caving (squat), hip sag (push-up), feet/hands (jumping jack), and visibility guidance
   ("step back: show hips to ankles").
 
+## Spoken coaching (voice + D-pad + visual)
+
+The TV speaks through the platform text-to-speech engine (Fire OS and the Android TV emulator both ship one):
+each set and its target, actionable cues from the phone ("Push knees out", "Go a little deeper"), "Halfway",
+"Target hit. Rest." and the session summary. A **Voice on/off** button sits next to **End**. Engine calls run on a
+background thread (binding the engine on the main thread caused an ANR on the emulator) and are rate-limited.
+`adb logcat -s FormCastCoach` shows every utterance. Added after the demo video was recorded.
+
+## Real-session evidence: record and replay
+
+The camera page has a **⏺ rec** control. Tap it before a set and again after: the phone downloads the raw
+MediaPipe landmark stream (33 joints, timestamps, active exercise) as `formcast-session-<time>.json`. Replay it
+through the exact counters the phone used:
+
+```bash
+node relay/replay.js formcast-session-123.json        # reps, per-rep form, cues per exercise segment
+node relay/replay.js formcast-session-123.json --json
+```
+
+`relay/replay.test.js` checks the harness on a synthetic fixture. A recording of a real workout is the honest way
+to turn "it counts real people" into a reproducible test: drop the file in `relay/fixtures/` and assert on it.
+
 ## Testing
 - `relay`: `npm test` (room isolation, bidirectional forwarding, rejection of bad rooms/roles).
 - TV: D-pad walkthrough on the emulator (home → profile → program → pair → session → summary → back), both camera and demo modes.

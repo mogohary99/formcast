@@ -9,6 +9,7 @@
 | OkHttp WebSocket, kotlinx-serialization, ZXing | 4.12.0 / 1.9.0 / 3.5.4 | relay client, messages, QR pairing |
 | MediaPipe Tasks Vision `PoseLandmarker` (web) | 0.10.35 + `pose_landmarker_lite` | pose detection on the phone |
 | Node `ws` | 8.18 | relay |
+| Android `TextToSpeech` (platform engine, `com.google.android.tts` on the emulator) | API 34 | spoken coaching cues on the TV (voice + D-pad + visual) |
 | Amazon Devices Builder Tools MCP, Fire TV docs | 1.0.17 | read for guidance; not wired into the agent (Fire OS support "limited", Vega SDK out of disk budget) |
 
 ## What worked well
@@ -18,6 +19,7 @@
 - Amazon staff confirmation that an Android TV emulator demo is acceptable removed the biggest uncertainty.
 
 ## What needs work
+0. **TextToSpeech on the main thread ANRs** on the emulator (engine binding + `setLanguage` block for >10 s on first use); nothing in the TV docs warns about it. An async factory or a one-line note would save every entrant who adds voice.
 1. **Disk and size guidance**: the API 34 TV image unpacks to 8 GB and the emulator insists on a 6 GB data partition (and rewrites `config.ini`); neither number is documented on the Fire TV pages.
 2. **A known-good dependency matrix for Fire TV + Compose**: AGP 8.13 + the newest Compose BOM fail with a cryptic "requires AGP 9.1"; Fire TV docs could pin a matrix for the current `tv-material`.
 3. **Companion-phone pattern**: Fire TV has no camera and the browser security model makes a LAN-only phone camera impossible; a documented QR + relay sample (or a Fire TV API for a trusted LAN pairing) would unblock every CV fitness idea the judges asked for.
