@@ -27,6 +27,9 @@
   p { margin: 0; color: #93a0b2; }
   input { font: inherit; font-size: 24px; letter-spacing: .3em; text-transform: uppercase; text-align: center; padding: 12px; border-radius: 12px; border: 1px solid #2a3442; background: #121922; color: #fff; width: 100%; }
   button { font: inherit; font-size: 17px; font-weight: 700; padding: 14px 18px; border-radius: 999px; border: 0; background: #35c2ff; color: #04121c; cursor: pointer; }
+  .calib { position: absolute; left: 16px; right: 16px; top: 64px; display: grid; gap: 8px; font-size: 14px; color: #ffe08a; text-shadow: 0 1px 2px #000; }
+  .calib .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; }
+  .calib .bar i { display: block; height: 100%; width: 0; background: #ffe08a; transition: width .1s linear; }
   .hidden { display: none !important; }
   .err { color: #ffb3b3; font-size: 14px; }
 </style>
@@ -35,8 +38,9 @@
 <div id="stage">
   <video id="video" playsinline muted autoplay></video>
   <canvas id="overlay"></canvas>
-  <div class="hud"><span class="pill" id="room">room —</span><span class="pill" id="status">connecting…</span><span class="pill" id="fps">— fps</span></div>
+  <div class="hud"><span class="pill" id="room">room —</span><span class="pill" id="status">connecting…</span><span class="pill" id="form">form —</span><span class="pill" id="fps">— fps</span></div>
   <div class="big"><div class="reps" id="reps">0<small id="exname">Waiting for the TV…</small></div><div class="cue" id="cue"></div></div>
+  <div class="calib hidden" id="calib"><div class="bar"><i id="calibbar"></i></div><span>Hold still, learning your standing pose…</span></div>
   <div class="gate" id="gate"><div class="card">
     <h1>FormCast camera</h1>
     <p>Prop your phone so your whole body is in frame. Pose landmarks only are sent to your TV; video never leaves this phone.</p>
@@ -66,11 +70,11 @@ const resetCounter = (id) => resetCounterIn(counters, id);
 function connect(code) {
   relayWs.searchParams.set("room", code);
   ws = new WebSocket(relayWs);
-  ws.onopen = () => { $("status").textContent = "connected"; $("status").className = "pill ok"; };
+  ws.onopen = () => { $("status").textContent = "connected"; $("status").className = "pill ok"; send({ t: "hello" }); /* TV answers with the current exercise */ };
   ws.onclose = () => { $("status").textContent = "reconnecting…"; $("status").className = "pill bad"; setTimeout(() => connect(code), 1500); };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.t === "exercise") { exercise = m.id in counters ? m.id : "squat"; resetCounter(exercise); $("exname").textContent = m.name ?? exercise; $("reps").firstChild.nodeValue = "0"; }
+    if (m.t === "exercise") { exercise = m.id in counters ? m.id : "squat"; resetCounter(exercise); $("exname").textContent = m.name ?? exercise; $("reps").firstChild.nodeValue = "0"; $("form").textContent = "form —"; $("calib").classList.remove("hidden"); }
     if (m.t === "peers") $("status").textContent = m.tv ? "TV connected" : "waiting for TV";
   };
 }
@@ -80,6 +84,8 @@ const send = (o) => { if (ws?.readyState === 1) ws.send(JSON.stringify(o)); };
 async function start() {
   const code = $("code").value.trim().toUpperCase();
   if (!/^[A-Z0-9]{4,8}$/.test(code)) { $("err").textContent = "Enter the 4-letter room code shown on your TV."; return; }
+  if (!window.isSecureContext) { $("err").textContent = "Camera access needs HTTPS (or localhost). Open the https:// camera link shown by the TV."; return; }
+  if (!navigator.mediaDevices?.getUserMedia) { $("err").textContent = "This browser cannot access the camera. Try Safari on iOS or Chrome on Android."; return; }
   $("err").textContent = "Loading pose model…";
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
@@ -93,7 +99,11 @@ async function start() {
     connect(code);
     loop();
   } catch (err) {
-    $("err").textContent = `Could not start: ${err.message}. Camera needs HTTPS (or localhost) and permission.`;
+    const why = err.name === "NotAllowedError" ? "Camera permission was denied. Allow the camera for this site in your browser settings, then reload."
+      : err.name === "NotFoundError" ? "No camera was found on this device."
+      : err.name === "NotReadableError" ? "The camera is in use by another app. Close it and try again."
+      : `Could not start: ${err.message}`;
+    $("err").textContent = why;
   }
 }
 let lastVideoTime = -1;
@@ -108,9 +118,12 @@ function loop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (lm) {
         const c = counters[exercise];
-        c.update(lm);
+        c.update(lm, performance.now());
         $("reps").firstChild.nodeValue = String(c.reps);
         $("cue").textContent = c.cue;
+        $("calibbar").style.width = `${Math.round(c.calib * 100)}%`;
+        $("calib").classList.toggle("hidden", c.ready);
+        if (c.form != null) { $("form").textContent = `form ${c.form} · avg ${c.avgForm}`; $("form").className = `pill ${c.form >= 70 ? "ok" : "bad"}`; }
         ctx.lineWidth = 4; ctx.strokeStyle = "#35c2ff"; ctx.fillStyle = "#fff";
         for (const [a, b] of EDGES) { ctx.beginPath(); ctx.moveTo(lm[a].x * canvas.width, lm[a].y * canvas.height); ctx.lineTo(lm[b].x * canvas.width, lm[b].y * canvas.height); ctx.stroke(); }
         for (const i of [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]) { ctx.beginPath(); ctx.arc(lm[i].x * canvas.width, lm[i].y * canvas.height, 5, 0, 7); ctx.fill(); }
@@ -119,7 +132,7 @@ function loop() {
         if (now - lastSend > 66) {
           lastSend = now;
           const kp = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].map((i) => [+lm[i].x.toFixed(3), +lm[i].y.toFixed(3), +(lm[i].visibility ?? 1).toFixed(2)]);
-          send({ t: "pose", ex: exercise, reps: c.reps, phase: c.phase, cue: c.cue, kp });
+          send({ t: "pose", ex: exercise, reps: c.reps, phase: c.phase, cue: c.cue, kp, form: c.form, avg: c.avgForm, calib: +c.calib.toFixed(2), ready: c.ready });
         }
       } else {
         $("cue").textContent = "Step into frame";

@@ -191,6 +191,8 @@ private fun SessionScreen(s: UiState, vm: SessionViewModel) {
                 Column(Modifier.padding(bottom = 26.dp)) {
                     Text("of ${s.target}", fontSize = 28.sp, color = Muted)
                     Text("target for ${s.profile}", fontSize = 14.sp, color = Muted)
+                    Spacer(Modifier.height(10.dp))
+                    FormChip(s.form, s.avgForm)
                 }
             }
             // progress bar
@@ -223,6 +225,32 @@ private fun SessionScreen(s: UiState, vm: SessionViewModel) {
                 Text(if (s.phoneConnected) "Live from your phone" else if (s.simulated) "Demo mode · no camera" else "Waiting for phone", fontSize = 14.sp, color = Muted)
             }
             if (s.keypoints == null) Text(if (s.simulated) "Pair a phone to see yourself here" else "Step into frame", Modifier.align(Alignment.Center), color = Muted, fontSize = 18.sp)
+            if (s.calibrating && s.keypoints != null) CalibrationOverlay(s.calib, Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+/** Last-rep form score and running average, colour-coded. Hidden until the first rep. */
+@Composable
+private fun FormChip(form: Int?, avg: Int?) {
+    if (form == null) return
+    val color = if (form >= 70) Ok else Warn
+    Row(Modifier.clip(RoundedCornerShape(99.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("FORM", fontSize = 11.sp, color = color, letterSpacing = 2.sp)
+        Spacer(Modifier.width(8.dp))
+        Text("$form", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = color)
+        if (avg != null) Text("  avg $avg", fontSize = 13.sp, color = Muted)
+    }
+}
+
+/** Shown while the phone learns the person's standing pose (about one second). */
+@Composable
+private fun CalibrationOverlay(progress: Float, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(18.dp)) {
+        Text("Hold still — learning your standing pose", fontSize = 16.sp, color = Warn)
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(99.dp)).background(Panel2)) {
+            Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(Warn))
         }
     }
 }
@@ -257,7 +285,7 @@ private fun SummaryScreen(s: UiState, vm: SessionViewModel) {
                 Row(Modifier.fillMaxWidth(0.8f).padding(vertical = 6.dp).clip(RoundedCornerShape(14.dp)).background(Panel).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(r.exercise.label, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                        Text("${r.reps} of ${r.target} reps in ${r.seconds}s", fontSize = 15.sp, color = Muted)
+                        Text("${r.reps} of ${r.target} reps in ${r.seconds}s" + (r.avgForm?.let { " · form $it%" } ?: ""), fontSize = 15.sp, color = Muted)
                     }
                     Text(if (next > r.target) "Next: $next ↑" else if (next < r.target) "Next: $next ↓" else "Next: $next →", fontSize = 20.sp, color = if (next > r.target) Ok else if (next < r.target) Warn else Muted, fontWeight = FontWeight.Bold)
                 }

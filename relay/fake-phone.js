@@ -6,8 +6,8 @@ import WebSocket from "ws";
 const room = (process.argv[2] ?? "DEMO").toUpperCase();
 const url = (process.argv[3] ?? "ws://127.0.0.1:8787") + `/phone?room=${room}`;
 const ws = new WebSocket(url);
-let exercise = "squat", t = 0, reps = 0, phase = "up";
-ws.on("open", () => console.log("fake phone joined", room));
+let exercise = "squat", t = 0, reps = 0, phase = "up", form = null, forms = [];
+ws.on("open", () => { console.log("fake phone joined", room); ws.send(JSON.stringify({ t: "hello" })); });
 ws.on("message", (d) => { const m = JSON.parse(d); if (m.t === "exercise") { exercise = m.id; reps = 0; console.log("exercise:", m.id); } });
 function kp(depth) { // depth 0 = standing, 1 = deep squat
   const hipY = 0.55 + 0.17 * depth, kneeX = 0.12 * depth;
@@ -28,7 +28,9 @@ setInterval(() => {
   const depth = (1 - Math.cos((2 * Math.PI * t) / period)) / 2; // 0→1→0
   const newPhase = depth > 0.6 ? "down" : "up";
   let cue = newPhase === "down" ? "Nice depth" : "";
-  if (phase === "down" && newPhase === "up") { reps++; cue = "Good rep"; }
+  if (phase === "down" && newPhase === "up") { reps++; form = 70 + Math.round(Math.random() * 30); forms.push(form); cue = form >= 85 ? "Good rep" : "Go a little deeper"; }
   phase = newPhase;
-  ws.send(JSON.stringify({ t: "pose", ex: exercise, reps, phase, cue, kp: kp(depth) }));
+  const avg = forms.length ? Math.round(forms.reduce((a, b) => a + b, 0) / forms.length) : null;
+  const ready = t > 1.0; // first second mimics calibration
+  ws.send(JSON.stringify({ t: "pose", ex: exercise, reps: ready ? reps : 0, phase, cue: ready ? cue : "Hold still… calibrating", kp: kp(depth), form, avg, calib: Math.min(1, t), ready }));
 }, 66);

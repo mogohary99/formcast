@@ -39,6 +39,12 @@ data class UiState(
     val phase: String = "",
     val cue: String = "",
     val keypoints: List<List<Float>>? = null,
+    /** Form score of the last rep and running average (0–100), from the phone. */
+    val form: Int? = null,
+    val avgForm: Int? = null,
+    /** Phone counter calibration (learning the standing pose) progress 0–1; ready when 1. */
+    val calib: Float = 0f,
+    val calibrating: Boolean = false,
     val secondsLeft: Int = 0,
     val setResults: List<SetResult> = emptyList(),
     val resting: Boolean = false,
@@ -90,15 +96,31 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { r.lastError.collectLatest { e -> _state.update { it.copy(relayError = e) } } }
         viewModelScope.launch { r.phones.collectLatest { n -> _state.update { it.copy(phoneConnected = n > 0) } } }
         viewModelScope.launch { r.pose.collectLatest { p -> p?.let(::onPose) } }
+        viewModelScope.launch { r.hello.collectLatest { n -> if (n > 0) resendExercise() } }
+    }
+
+    /** A phone joined (or reconnected) mid-session: tell it which exercise to count. */
+    private fun resendExercise() {
+        val s = _state.value
+        if (s.screen != Screen.SESSION) return
+        val ex = s.program?.exercises?.getOrNull(s.exerciseIndex) ?: return
+        relay?.sendExercise(ex.id, ex.label)
     }
 
     private fun onPose(p: PoseMsg) {
         val s = _state.value
         if (s.screen != Screen.SESSION || s.resting) return
         val ex = s.program?.exercises?.getOrNull(s.exerciseIndex) ?: return
-        if (p.ex != ex.id) return
-        _state.update { it.copy(reps = p.reps, phase = p.phase ?: "", cue = p.cue ?: "", keypoints = p.kp) }
-        if (p.reps >= s.target) completeSet()
+        if (p.ex != ex.id) { resendExercise(); return }
+        val ready = p.ready ?: true
+        _state.update {
+            it.copy(
+                reps = p.reps, phase = p.phase ?: "", cue = p.cue ?: "", keypoints = p.kp,
+                form = p.form ?: it.form, avgForm = p.avg ?: it.avgForm,
+                calib = p.calib ?: if (ready) 1f else 0f, calibrating = !ready,
+            )
+        }
+        if (ready && p.reps >= s.target) completeSet()
     }
 
     fun startSession(simulated: Boolean) {
@@ -114,7 +136,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         val ex = program.exercises[index]
         viewModelScope.launch {
             val target = progress.target(s.profile, ex)
-            _state.update { it.copy(exerciseIndex = index, target = target, reps = 0, phase = "", cue = ex.cueHint, keypoints = null, secondsLeft = 60, resting = false) }
+            _state.update { it.copy(exerciseIndex = index, target = target, reps = 0, phase = "", cue = ex.cueHint, keypoints = null, form = null, avgForm = null, calib = 0f, calibrating = !it.simulated && it.phoneConnected, secondsLeft = 60, resting = false) }
             relay?.sendExercise(ex.id, ex.label)
             startTimer()
             if (_state.value.simulated) startSimulation(ex, target)
@@ -146,7 +168,11 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                     reps == target - 1 -> "Last one, full range"
                     else -> ex.cueHint
                 }
-                _state.update { it.copy(reps = reps, cue = cue, phase = "up") }
+                val form = 72 + ((reps * 37) % 28) // deterministic, varied 72–99
+                _state.update { st ->
+                    val avg = ((st.avgForm ?: form) * (reps - 1) + form) / reps
+                    st.copy(reps = reps, cue = cue, phase = "up", form = form, avgForm = avg)
+                }
                 if (reps >= target) completeSet()
             }
         }
@@ -157,7 +183,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         if (s.resting) return
         val program = s.program ?: return
         val ex = program.exercises[s.exerciseIndex]
-        val result = SetResult(ex, s.target, s.reps, 60 - s.secondsLeft)
+        val result = SetResult(ex, s.target, s.reps, 60 - s.secondsLeft, s.avgForm)
         timer?.cancel(); simJob?.cancel()
         _state.update { it.copy(resting = true, setResults = it.setResults + result, cue = if (s.reps >= s.target) "Target hit!" else "Set done") }
         viewModelScope.launch {

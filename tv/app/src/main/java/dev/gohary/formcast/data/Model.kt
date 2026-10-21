@@ -35,10 +35,16 @@ data class PoseMsg(
     val kp: List<List<Float>>? = null,
     val phones: Int? = null,
     val tv: Int? = null,
+    /** Form score of the last rep (0–100) and running average, from the phone's counters. */
+    val form: Int? = null,
+    val avg: Int? = null,
+    /** Calibration progress 0–1 and whether the counter is ready. */
+    val calib: Float? = null,
+    val ready: Boolean? = null,
 )
 
 /** TV → phone. */
 @Serializable
 data class ExerciseMsg(val t: String = "exercise", val id: String, val name: String)
 
-data class SetResult(val exercise: Exercise, val target: Int, val reps: Int, val seconds: Int)
+data class SetResult(val exercise: Exercise, val target: Int, val reps: Int, val seconds: Int, val avgForm: Int? = null)

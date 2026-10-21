@@ -26,24 +26,61 @@ Built for the **Build, Ship, Shape: Amazon Developer Hackathon 2026**, Fire TV t
 ## Run it
 
 ### Fire TV / Android TV app
-Requirements: Android Studio Ladybug+ or command-line SDK with platform 36 and build-tools 35, JDK 17+.
+Requirements: Android SDK with platform 36 and build-tools 35, JDK 17+ (Android Studio's embedded JDK or any
+system JDK; the build was verified with JDK 23). The Gradle wrapper is included.
 
 ```bash
 cd tv
-./gradlew assembleDebug -PRELAY_URL=ws://10.0.2.2:8787 -PCAM_URL=http://10.0.2.2:8787/cam/
+./gradlew assembleDebug                      # defaults: relay ws://10.0.2.2:8787, camera page http://10.0.2.2:8787/cam/
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n dev.gohary.formcast/.MainActivity
 ```
-`10.0.2.2` reaches the host machine from the Android emulator. On a real Fire TV (Developer options → ADB debugging, `adb connect <tv-ip>`), pass your relay's public `wss://…` and `https://…/cam/` URLs.
+`10.0.2.2` reaches the host machine from the Android emulator. To point the app at the hosted relay (see
+*Hosted relay* below) or a real Fire TV (Developer options → ADB debugging, `adb connect <tv-ip>`):
 
-Emulator used for the demo: Android TV (API 34, arm64), 1080p, created with `avdmanager create avd -n firetv_api34 -k "system-images;android-34;android-tv;arm64-v8a" -d tv_1080p` (Fire OS 8 is Android 11; the app targets minSdk 28).
+```bash
+./gradlew assembleDebug -PRELAY_URL=wss://formcast.<account>.workers.dev -PCAM_URL=https://formcast.<account>.workers.dev/cam/
+```
 
-### Relay + phone page
+Emulator used for the demo: Android TV (API 34, arm64), 1080p, created with
+`avdmanager create avd -n firetv_api34 -k "system-images;android-34;android-tv;arm64-v8a" -d tv_1080p`
+(Fire OS 8 is Android 11; the app targets minSdk 28). The official hackathon FAQ accepts the Android TV
+emulator for the Fire TV track — see `docs/firetv-eligibility.md` for the quoted rule and staff answers.
+
+### Relay + phone page (local)
 ```bash
 cd relay && npm install && npm start      # http://localhost:8787  (ws /tv, /phone; camera page /cam/)
-npm test
+npm test                                  # relay forwarding/isolation + rep-counter tests
+node fake-phone.js DEMO                   # synthetic phone for a TV started with `--es room DEMO`
 ```
-For a phone to use its camera the page must be served over **HTTPS**: deploy the relay (Render/Fly/any Node host with TLS) or expose it with a tunnel. On a desktop browser, `http://localhost:8787/cam/?room=XXXX` works directly (localhost is a secure context), which is how the end-to-end path was tested with a laptop webcam.
+A phone browser only exposes the camera on **HTTPS**, so for a real phone use the hosted relay below (or a
+tunnel). On a desktop browser `http://localhost:8787/cam/?room=XXXX` works directly (localhost is a secure
+context), which is how the end-to-end path was tested with a laptop webcam.
+
+### Hosted relay (Cloudflare Workers, free)
+`worker/` is the same relay as a Durable Object per room (strong ordering, WebSocket hibernation, $0 on the
+Free plan) plus the camera page served over HTTPS from Workers Static Assets.
+
+```bash
+cd worker && npm install
+npm run dev                               # local: ws://127.0.0.1:8789 (needs Node ≥ 22 for wrangler)
+RELAY_WS=ws://127.0.0.1:8789 npm run test:live
+npx wrangler login && npm run deploy      # → https://formcast.<account>.workers.dev
+```
+Then build the TV app with `-PRELAY_URL=wss://…` / `-PCAM_URL=https://…/cam/` as shown above and scan the QR
+code with any phone.
+
+### How counting works (and why it is trustworthy)
+`relay/public/cam/counters.js` is shared by the phone page and the Node tests:
+- **Calibration** — the first ~1 s of frames with the required joints visible sets a per-person standing
+  baseline (median joint angle), so thresholds adapt to leg length, camera height and lens. The TV shows
+  "Hold still — learning your standing pose" with a progress bar.
+- **Smoothing + hysteresis + debounce** — joint angles are low-pass filtered, "down" and "up" use separate
+  thresholds, and a phase must last ≥ 250 ms before it can flip, so jitter never double-counts.
+- **Form score** — every rep gets a 0–100 depth/range score against the ideal angle; the TV shows the last
+  rep and the running average, the summary and the next-session target use it.
+- **Cues** — knees caving (squat), hip sag (push-up), feet/hands (jumping jack), and visibility guidance
+  ("step back: show hips to ankles").
 
 ## Testing
 - `relay`: `npm test` (room isolation, bidirectional forwarding, rejection of bad rooms/roles).

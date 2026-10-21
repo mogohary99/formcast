@@ -1,0 +1,19 @@
+{
+  "name": "formcast-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Workers deployment of the FormCast relay (Durable Object per room) and the HTTPS phone camera page.",
+  "scripts": {
+    "build:assets": "rm -rf public && mkdir -p public && cp -R ../relay/public/cam public/cam && cp ../relay/public/index.html public/index.html",
+    "dev": "npm run build:assets && wrangler dev --port 8789 --ip 127.0.0.1",
+    "deploy": "npm run build:assets && wrangler deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:live": "node test/relay.live.test.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4",
+    "typescript": "^5",
+    "wrangler": "^4"
+  }
+}

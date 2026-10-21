@@ -38,7 +38,7 @@ class Progress(private val context: Context) {
     suspend fun finishSession(profile: String, results: List<SetResult>) {
         context.store.edit {
             it[sessions(profile)] = (it[sessions(profile)] ?: 0) + 1
-            it[last(profile)] = results.joinToString(" · ") { r -> "${r.exercise.label} ${r.reps}/${r.target}" }
+            it[last(profile)] = results.joinToString(" · ") { r -> "${r.exercise.label} ${r.reps}/${r.target}" + (r.avgForm?.let { f -> " (form $f%)" } ?: "") }
         }
     }
 }

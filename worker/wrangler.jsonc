@@ -1,0 +1,12 @@
+{
+  // FormCast relay on Cloudflare Workers (Free plan): one Durable Object per room code, WebSocket
+  // hibernation, HTTPS phone camera page served from ./public (copied from ../relay/public at build).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "formcast",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-05-03",
+  "assets": { "directory": "./public" },
+  "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "Room" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "observability": { "enabled": true }
+}

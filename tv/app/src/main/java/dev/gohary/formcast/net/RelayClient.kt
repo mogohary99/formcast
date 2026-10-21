@@ -27,6 +27,8 @@ class RelayClient(private val baseUrl: String, val room: String) {
     val phones = MutableStateFlow(0)
     val pose: MutableStateFlow<PoseMsg?> = MutableStateFlow(null)
     val lastError = MutableStateFlow<String?>(null)
+    /** Incremented whenever a phone says hello (joined or reconnected) so the TV can resend the current exercise. */
+    val hello = MutableStateFlow(0)
 
     val state: StateFlow<Boolean> get() = connected
 
@@ -49,6 +51,7 @@ class RelayClient(private val baseUrl: String, val room: String) {
                     when (m.t) {
                         "pose" -> pose.value = m
                         "peers" -> phones.value = m.phones ?: 0
+                        "hello" -> hello.value = hello.value + 1
                     }
                 }
             }

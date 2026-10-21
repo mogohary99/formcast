@@ -5,4 +5,7 @@ tv/local.properties
 tv/.kotlin/
 *.apk
 relay/node_modules/
+worker/node_modules/
+worker/.wrangler/
+worker/public/
 .DS_Store
