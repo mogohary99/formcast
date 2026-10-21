@@ -28,7 +28,7 @@ test("analyze() reports fps, dropouts, calibration, auto vs manual reps and form
   assert.equal(s.exercise, "squat");
   assert.equal(s.frames, 42);
   assert.equal(s.dropout_frames, 3);
-  assert.equal(s.fps, 10);
+  assert.ok(Math.abs(s.fps - 10.2) < 0.05, `fps ${s.fps}`); // 42 frames over 4.1 s of elapsed time
   assert.equal(s.auto_reps, 3);
   assert.equal(s.manual_reps, 4);
   assert.equal(s.diff, -1, "a missed rep is reported as a negative diff, not hidden");
