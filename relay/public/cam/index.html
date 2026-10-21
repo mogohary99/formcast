@@ -17,6 +17,8 @@
   .pill { padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.12); font-size: 13px; font-weight: 600; backdrop-filter: blur(6px); }
   .pill.ok { background: rgba(79,195,138,.25); color: #8ff0bb; }
   .pill.bad { background: rgba(255,122,122,.25); color: #ffb3b3; }
+  button.pill { border: 0; color: #eef2f7; cursor: pointer; }
+  button.pill.on { background: rgba(255,122,122,.45); color: #fff; }
   .big { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0,0,0,.75)); display: flex; align-items: flex-end; justify-content: space-between; }
   .reps { font-size: 64px; font-weight: 800; line-height: 1; }
   .reps small { font-size: 16px; font-weight: 600; opacity: .8; display: block; margin-top: 4px; }
@@ -38,7 +40,7 @@
 <div id="stage">
   <video id="video" playsinline muted autoplay></video>
   <canvas id="overlay"></canvas>
-  <div class="hud"><span class="pill" id="room">room —</span><span class="pill" id="status">connecting…</span><span class="pill" id="form">form —</span><span class="pill" id="fps">— fps</span></div>
+  <div class="hud"><span class="pill" id="room">room —</span><span class="pill" id="status">connecting…</span><span class="pill" id="form">form —</span><span class="pill" id="fps">— fps</span><button class="pill" id="rec" title="Record this session's pose landmarks to a JSON file (for the replay test in the repo)">⏺ rec</button></div>
   <div class="big"><div class="reps" id="reps">0<small id="exname">Waiting for the TV…</small></div><div class="cue" id="cue"></div></div>
   <div class="calib hidden" id="calib"><div class="bar"><i id="calibbar"></i></div><span>Hold still, learning your standing pose…</span></div>
   <div class="gate" id="gate"><div class="card">
@@ -65,6 +67,18 @@ if (params.get("room")) $("code").value = params.get("room").toUpperCase();
 import { L, EDGES, createCounters, resetCounter as resetCounterIn } from "./counters.js";
 const counters = createCounters();
 const resetCounter = (id) => resetCounterIn(counters, id);
+
+// ---------- session recorder ----------
+// Records the raw landmark stream (33 joints, x/y/visibility) with timestamps and the active exercise, so a
+// real workout can be replayed through the same counters offline: `node replay.js session.json` (see relay/).
+const rec = { on: false, frames: [], startedAt: 0 };
+$("rec").addEventListener("click", () => {
+  if (!rec.on) { rec.on = true; rec.frames = []; rec.startedAt = performance.now(); $("rec").textContent = "⏹ stop"; $("rec").classList.add("on"); return; }
+  rec.on = false; $("rec").textContent = "⏺ rec"; $("rec").classList.remove("on");
+  const blob = new Blob([JSON.stringify({ version: 1, recorded_at: new Date().toISOString(), room: $("room").textContent.replace(/^room /, ""), source: "phone-camera", frames: rec.frames })], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `formcast-session-${Date.now()}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+});
 
 // ---------- relay ----------
 function connect(code) {
@@ -118,6 +132,7 @@ function loop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (lm) {
         const c = counters[exercise];
+        if (rec.on) rec.frames.push({ t: Math.round(performance.now() - rec.startedAt), ex: exercise, lm: lm.map((p) => [+p.x.toFixed(4), +p.y.toFixed(4), +(p.visibility ?? 1).toFixed(2)]) });
         c.update(lm, performance.now());
         $("reps").firstChild.nodeValue = String(c.reps);
         $("cue").textContent = c.cue;

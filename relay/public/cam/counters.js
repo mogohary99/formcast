@@ -120,7 +120,9 @@ export function createCounters(options = {}) {
       cueDown: "Hold", cueShallow: "Front knee to 90°",
     }, cfg),
     jumpingjack: {
-      reps: 0, phase: "in", cue: "", form: null, forms: [], avgForm: null, ready: false, calib: 0, _lastFlip: -Infinity, _calib: [], _shW: null,
+      // Form = range of motion at the "out" peak: feet width beyond the calibrated shoulder width and hands
+      // height above the nose, each 0-50, so a half-hearted jack scores low instead of a constant 100.
+      reps: 0, phase: "in", cue: "", form: null, forms: [], avgForm: null, ready: false, calib: 0, _lastFlip: -Infinity, _calib: [], _shW: null, _maxAnk: 0, _maxHands: 0,
       update(lm, t = nowMs()) {
         const ok = vis(lm[L.LSH]) && vis(lm[L.RSH]) && vis(lm[L.LANK]) && vis(lm[L.RANK]);
         if (!ok) { this.cue = "Step back: show shoulders to ankles"; return { ok: false, calibrating: !this.ready }; }
@@ -133,15 +135,24 @@ export function createCounters(options = {}) {
         const handsUp = lm[L.LWR].y < lm[L.NOSE].y && lm[L.RWR].y < lm[L.NOSE].y;
         const feetOut = ankW > this._shW * 1.4;
         const canFlip = t - this._lastFlip >= cfg.minPhaseMs;
-        if (this.phase === "in" && handsUp && feetOut && canFlip) { this.phase = "out"; this._lastFlip = t; this.cue = "Out"; }
+        if (this.phase === "out") {
+          this._maxAnk = Math.max(this._maxAnk, ankW);
+          this._maxHands = Math.max(this._maxHands, lm[L.NOSE].y - Math.max(lm[L.LWR].y, lm[L.RWR].y));
+        }
+        if (this.phase === "in" && handsUp && feetOut && canFlip) { this.phase = "out"; this._lastFlip = t; this.cue = "Out"; this._maxAnk = ankW; this._maxHands = lm[L.NOSE].y - Math.max(lm[L.LWR].y, lm[L.RWR].y); }
         else if (this.phase === "out" && !handsUp && !feetOut && canFlip) {
           this.phase = "in"; this._lastFlip = t; this.reps++;
-          this.form = 100; this.forms.push(100); this.avgForm = 100; this.cue = "Good rep";
+          // feet: 1.4× shoulder width (threshold) → 0, 2.2× → 50. hands: wrists level with the nose → 0, a shoulder-width above it → 50.
+          const feet = clamp((this._maxAnk / this._shW - 1.4) / 0.8, 0, 1);
+          const hands = clamp(this._maxHands / this._shW, 0, 1);
+          this.form = Math.round(50 * feet + 50 * hands);
+          this.forms.push(this.form); this.avgForm = Math.round(this.forms.reduce((a, b) => a + b, 0) / this.forms.length);
+          this.cue = this.form >= 70 ? "Good rep" : feet < hands ? "Feet wider" : "Reach higher";
         } else if (this.phase === "in" && handsUp && !feetOut) this.cue = "Feet wider";
         else if (this.phase === "in" && !handsUp && feetOut) this.cue = "Hands overhead";
         return { ok: true, calibrating: false };
       },
-      reset() { Object.assign(this, { reps: 0, phase: "in", cue: "", form: null, forms: [], avgForm: null, ready: false, calib: 0, _lastFlip: -Infinity, _calib: [], _shW: null }); },
+      reset() { Object.assign(this, { reps: 0, phase: "in", cue: "", form: null, forms: [], avgForm: null, ready: false, calib: 0, _lastFlip: -Infinity, _calib: [], _shW: null, _maxAnk: 0, _maxHands: 0 }); },
     },
   };
 }

@@ -121,6 +121,26 @@ test("jumping jack counter needs hands overhead AND feet wide, then back in", ()
   assert.equal(c.phase, "out");
   t = feed(c, [inPose, inPose], { t });
   assert.equal(c.reps, 1);
+  assert.ok(c.form > 0 && c.form <= 100, `form ${c.form}`);
+});
+
+test("jumping jack form scores range of motion: a wide, high jack beats a minimal one", () => {
+  const c = createCounters().jumpingjack;
+  const inPose = frame();
+  // Minimal: feet just past the threshold (1.5× shoulder width), hands barely above the nose.
+  const minimal = frame({ [L.LWR]: { x: 0.40, y: 0.09 }, [L.RWR]: { x: 0.60, y: 0.09 }, [L.LANK]: { x: 0.38, y: 0.95 }, [L.RANK]: { x: 0.62, y: 0.95 } });
+  // Full: feet 3× shoulder width, hands a full shoulder width above the nose.
+  const full = frame({ [L.LWR]: { x: 0.35, y: -0.10 }, [L.RWR]: { x: 0.65, y: -0.10 }, [L.LANK]: { x: 0.26, y: 0.95 }, [L.RANK]: { x: 0.74, y: 0.95 } });
+  let t = calibrate(c, inPose);
+  t = feed(c, [minimal, minimal, minimal], { t });
+  t = feed(c, [inPose, inPose, inPose], { t });
+  const small = c.form;
+  t = feed(c, [full, full, full], { t });
+  t = feed(c, [inPose, inPose, inPose], { t });
+  assert.equal(c.reps, 2);
+  assert.ok(small < 40, `minimal jack form ${small}`);
+  assert.ok(c.form >= 90, `full jack form ${c.form}`);
+  assert.ok(c.avgForm > small && c.avgForm < c.form);
 });
 
 test("resetCounter clears reps, calibration and form history", () => {
