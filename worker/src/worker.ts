@@ -85,7 +85,8 @@ export default {
     const url = new URL(request.url);
     // workers.dev also answers plain HTTP. Send everything to HTTPS (308 keeps the method);
     // local `wrangler dev` is plain HTTP on a loopback host and must keep working.
-    const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]";
+    // loopback and private-network hosts (wrangler dev reached from an emulator as 10.0.2.2, or a LAN device)
+    const loopback = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url.hostname) || url.hostname === "localhost" || url.hostname === "[::1]";
     if (!loopback && (url.protocol === "http:" || /"scheme":"http"/.test(request.headers.get("cf-visitor") ?? ""))) {
       url.protocol = "https:";
       return Response.redirect(url.toString(), 308);
