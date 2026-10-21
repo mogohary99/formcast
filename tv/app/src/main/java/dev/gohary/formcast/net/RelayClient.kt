@@ -17,7 +17,9 @@ import java.util.concurrent.TimeUnit
  * `/phone?room=CODE`. Reconnects with backoff; exposes the latest pose and connection state as flows.
  */
 class RelayClient(private val baseUrl: String, val room: String) {
-    private val json = Json { ignoreUnknownKeys = true }
+    // encodeDefaults: ExerciseMsg.t has a default value and kotlinx.serialization drops defaults unless told
+    // otherwise, which silently sent {"id","name"} without "t" (the phone ignored every exercise switch).
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val http = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
     private var ws: WebSocket? = null
     private var closed = false
