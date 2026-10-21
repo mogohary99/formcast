@@ -66,6 +66,11 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(sessionsBefore = progress.sessionCount(p), lastSummary = progress.lastSummary(p)) }
     }
 
+    fun overrideRoom(code: String) {
+        val clean = code.uppercase().filter { it.isLetterOrDigit() }.take(8)
+        if (clean.length >= 4 && relay == null) _state.update { it.copy(room = clean) }
+    }
+
     fun selectProfile(name: String) {
         _state.update { it.copy(profile = name) }
         viewModelScope.launch { refreshProfileStats() }
