@@ -13,6 +13,7 @@ const open = (path) => new Promise((res, rej) => {
   ws.queue = []; ws.waiters = [];
   ws.on("message", (d) => { const m = JSON.parse(d.toString()); const w = ws.waiters.shift(); if (w) w(m); else ws.queue.push(m); });
   ws.on("open", () => res(ws)); ws.on("error", rej);
+  setTimeout(() => rej(new Error(`connect timeout (10 s) for ${path}`)), 10_000);
 });
 const next = (ws) => new Promise((res, rej) => { if (ws.queue.length) return res(ws.queue.shift()); ws.waiters.push(res); setTimeout(() => rej(new Error("timeout waiting for message")), 5000); });
 const fails = (path) => new Promise((res) => { const ws = new WebSocket(`${base}${path}`); ws.on("error", () => res(true)); ws.on("open", () => { ws.close(); res(false); }); });
