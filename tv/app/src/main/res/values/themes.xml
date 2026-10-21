@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.FormCast" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0B1016</item>
+        <item name="android:statusBarColor">#0B1016</item>
+    </style>
+</resources>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b1016" />
+<title>FormCast camera</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b1016; color: #eef2f7; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #stage { position: relative; width: 100%; height: 100dvh; overflow: hidden; background: #000; }
+  video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  video { transform: scaleX(-1); }
+  canvas { transform: scaleX(-1); }
+  .hud { position: absolute; left: 0; right: 0; top: 0; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; background: linear-gradient(rgba(0,0,0,.6), transparent); }
+  .pill { padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.12); font-size: 13px; font-weight: 600; backdrop-filter: blur(6px); }
+  .pill.ok { background: rgba(79,195,138,.25); color: #8ff0bb; }
+  .pill.bad { background: rgba(255,122,122,.25); color: #ffb3b3; }
+  .big { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0,0,0,.75)); display: flex; align-items: flex-end; justify-content: space-between; }
+  .reps { font-size: 64px; font-weight: 800; line-height: 1; }
+  .reps small { font-size: 16px; font-weight: 600; opacity: .8; display: block; margin-top: 4px; }
+  .cue { font-size: 18px; font-weight: 600; max-width: 55%; text-align: right; color: #ffe08a; }
+  .gate { position: absolute; inset: 0; display: grid; place-items: center; background: #0b1016; padding: 24px; text-align: center; }
+  .gate .card { max-width: 420px; display: grid; gap: 14px; }
+  h1 { margin: 0; font-size: 26px; }
+  p { margin: 0; color: #93a0b2; }
+  input { font: inherit; font-size: 24px; letter-spacing: .3em; text-transform: uppercase; text-align: center; padding: 12px; border-radius: 12px; border: 1px solid #2a3442; background: #121922; color: #fff; width: 100%; }
+  button { font: inherit; font-size: 17px; font-weight: 700; padding: 14px 18px; border-radius: 999px; border: 0; background: #35c2ff; color: #04121c; cursor: pointer; }
+  .hidden { display: none !important; }
+  .err { color: #ffb3b3; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="overlay"></canvas>
+  <div class="hud"><span class="pill" id="room">room —</span><span class="pill" id="status">connecting…</span><span class="pill" id="fps">— fps</span></div>
+  <div class="big"><div class="reps" id="reps">0<small id="exname">Waiting for the TV…</small></div><div class="cue" id="cue"></div></div>
+  <div class="gate" id="gate"><div class="card">
+    <h1>FormCast camera</h1>
+    <p>Prop your phone so your whole body is in frame. Pose landmarks only are sent to your TV; video never leaves this phone.</p>
+    <input id="code" maxlength="8" placeholder="ROOM CODE" autocapitalize="characters" autocomplete="off" />
+    <button id="start">Start camera</button>
+    <p class="err" id="err"></p>
+  </div></div>
+</div>
+<script type="module">
+import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35";
+const { PoseLandmarker, FilesetResolver } = vision;
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
+const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+
+// Landmark indices (MediaPipe BlazePose 33-point topology)
+const L = { NOSE: 0, LSH: 11, RSH: 12, LEL: 13, REL: 14, LWR: 15, RWR: 16, LHIP: 23, RHIP: 24, LKNEE: 25, RKNEE: 26, LANK: 27, RANK: 28 };
+const EDGES = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const relayWs = (() => { const u = new URL(location.href); u.protocol = u.protocol === "https:" ? "wss:" : "ws:"; u.pathname = "/phone"; u.search = ""; return u; })();
+let ws, landmarker, exercise = "squat", lastSend = 0, frames = 0, fpsT = performance.now();
+if (params.get("room")) $("code").value = params.get("room").toUpperCase();
+
+// ---------- rep counting: simple, explainable state machines on joint angles ----------
+function angle(a, b, c) { // angle at b in degrees
+  const v1 = [a.x - b.x, a.y - b.y], v2 = [c.x - b.x, c.y - b.y];
+  const dot = v1[0]*v2[0] + v1[1]*v2[1], m = Math.hypot(...v1) * Math.hypot(...v2) || 1e-6;
+  return Math.acos(Math.max(-1, Math.min(1, dot / m))) * 180 / Math.PI;
+}
+const vis = (p) => (p.visibility ?? 1) > 0.5;
+const counters = {
+  squat: { reps: 0, phase: "up", cue: "", update(lm) {
+    const k = Math.min(angle(lm[L.LHIP], lm[L.LKNEE], lm[L.LANK]), angle(lm[L.RHIP], lm[L.RKNEE], lm[L.RANK]));
+    const ok = vis(lm[L.LHIP]) && vis(lm[L.LKNEE]) && vis(lm[L.LANK]);
+    if (!ok) { this.cue = "Step back: show hips to ankles"; return; }
+    if (this.phase === "up" && k < 100) { this.phase = "down"; this.cue = k < 80 ? "Nice depth" : "Go a little deeper"; }
+    else if (this.phase === "down" && k > 160) { this.phase = "up"; this.reps++; this.cue = "Good rep"; }
+    // knees caving: ankles wider than knees by a margin
+    const kneeW = Math.abs(lm[L.LKNEE].x - lm[L.RKNEE].x), ankW = Math.abs(lm[L.LANK].x - lm[L.RANK].x);
+    if (this.phase === "down" && kneeW < ankW * 0.7) this.cue = "Push knees out";
+    return { k };
+  } },
+  pushup: { reps: 0, phase: "up", cue: "", update(lm) {
+    const e = Math.min(angle(lm[L.LSH], lm[L.LEL], lm[L.LWR]), angle(lm[L.RSH], lm[L.REL], lm[L.RWR]));
+    const ok = vis(lm[L.LSH]) && vis(lm[L.LEL]) && vis(lm[L.LWR]);
+    if (!ok) { this.cue = "Show shoulders, elbows and wrists"; return; }
+    if (this.phase === "up" && e < 95) { this.phase = "down"; this.cue = "Lower"; }
+    else if (this.phase === "down" && e > 155) { this.phase = "up"; this.reps++; this.cue = "Good rep"; }
+    const hipSag = angle(lm[L.LSH], lm[L.LHIP], lm[L.LKNEE]);
+    if (hipSag < 150) this.cue = "Keep hips in line";
+    return { e };
+  } },
+  jumpingjack: { reps: 0, phase: "in", cue: "", update(lm) {
+    const handsUp = lm[L.LWR].y < lm[L.NOSE].y && lm[L.RWR].y < lm[L.NOSE].y;
+    const shW = Math.abs(lm[L.LSH].x - lm[L.RSH].x), ankW = Math.abs(lm[L.LANK].x - lm[L.RANK].x);
+    const feetOut = ankW > shW * 1.4;
+    if (this.phase === "in" && handsUp && feetOut) { this.phase = "out"; this.cue = "Out"; }
+    else if (this.phase === "out" && !handsUp && !feetOut) { this.phase = "in"; this.reps++; this.cue = "Good rep"; }
+    return {};
+  } },
+  lunge: { reps: 0, phase: "up", cue: "", update(lm) {
+    const k = Math.min(angle(lm[L.LHIP], lm[L.LKNEE], lm[L.LANK]), angle(lm[L.RHIP], lm[L.RKNEE], lm[L.RANK]));
+    if (this.phase === "up" && k < 105) { this.phase = "down"; this.cue = "Hold"; }
+    else if (this.phase === "down" && k > 160) { this.phase = "up"; this.reps++; this.cue = "Good rep"; }
+    return { k };
+  } },
+};
+function resetCounter(id) { const c = counters[id]; if (c) { c.reps = 0; c.phase = id === "jumpingjack" ? "in" : "up"; c.cue = ""; } }
+
+// ---------- relay ----------
+function connect(code) {
+  relayWs.searchParams.set("room", code);
+  ws = new WebSocket(relayWs);
+  ws.onopen = () => { $("status").textContent = "connected"; $("status").className = "pill ok"; };
+  ws.onclose = () => { $("status").textContent = "reconnecting…"; $("status").className = "pill bad"; setTimeout(() => connect(code), 1500); };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.t === "exercise") { exercise = m.id in counters ? m.id : "squat"; resetCounter(exercise); $("exname").textContent = m.name ?? exercise; $("reps").firstChild.nodeValue = "0"; }
+    if (m.t === "peers") $("status").textContent = m.tv ? "TV connected" : "waiting for TV";
+  };
+}
+const send = (o) => { if (ws?.readyState === 1) ws.send(JSON.stringify(o)); };
+
+// ---------- camera + pose ----------
+async function start() {
+  const code = $("code").value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{4,8}$/.test(code)) { $("err").textContent = "Enter the 4-letter room code shown on your TV."; return; }
+  $("err").textContent = "Loading pose model…";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    const video = $("video");
+    video.srcObject = stream;
+    await video.play();
+    const fileset = await FilesetResolver.forVisionTasks(WASM);
+    landmarker = await PoseLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL, delegate: "GPU" }, runningMode: "VIDEO", numPoses: 1 });
+    $("room").textContent = `room ${code}`;
+    $("gate").classList.add("hidden");
+    connect(code);
+    loop();
+  } catch (err) {
+    $("err").textContent = `Could not start: ${err.message}. Camera needs HTTPS (or localhost) and permission.`;
+  }
+}
+let lastVideoTime = -1;
+function loop() {
+  const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
+  const step = () => {
+    if (video.currentTime !== lastVideoTime && video.readyState >= 2) {
+      lastVideoTime = video.currentTime;
+      const res = landmarker.detectForVideo(video, performance.now());
+      const lm = res.landmarks?.[0];
+      if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (lm) {
+        const c = counters[exercise];
+        c.update(lm);
+        $("reps").firstChild.nodeValue = String(c.reps);
+        $("cue").textContent = c.cue;
+        ctx.lineWidth = 4; ctx.strokeStyle = "#35c2ff"; ctx.fillStyle = "#fff";
+        for (const [a, b] of EDGES) { ctx.beginPath(); ctx.moveTo(lm[a].x * canvas.width, lm[a].y * canvas.height); ctx.lineTo(lm[b].x * canvas.width, lm[b].y * canvas.height); ctx.stroke(); }
+        for (const i of [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]) { ctx.beginPath(); ctx.arc(lm[i].x * canvas.width, lm[i].y * canvas.height, 5, 0, 7); ctx.fill(); }
+        // Throttle to ~15 messages/s; send compact keypoints (x, y, visibility) for the 13 joints the TV draws.
+        const now = performance.now();
+        if (now - lastSend > 66) {
+          lastSend = now;
+          const kp = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].map((i) => [+lm[i].x.toFixed(3), +lm[i].y.toFixed(3), +(lm[i].visibility ?? 1).toFixed(2)]);
+          send({ t: "pose", ex: exercise, reps: c.reps, phase: c.phase, cue: c.cue, kp });
+        }
+      } else {
+        $("cue").textContent = "Step into frame";
+      }
+      frames++;
+      if (performance.now() - fpsT > 1000) { $("fps").textContent = `${frames} fps`; frames = 0; fpsT = performance.now(); }
+    }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+$("start").addEventListener("click", start);
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+tv/.gradle/
+tv/build/
+tv/app/build/
+tv/local.properties
+tv/.kotlin/
+*.apk
+relay/node_modules/
+.DS_Store
