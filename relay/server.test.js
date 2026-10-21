@@ -6,8 +6,14 @@ import WebSocket from "ws";
 test("relay forwards phone→tv and tv→phone within a room, isolates rooms", async () => {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const port = server.address().port;
-  const open = (path) => new Promise((res, rej) => { const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`); ws.on("open", () => res(ws)); ws.on("error", rej); });
-  const next = (ws) => new Promise((res) => ws.once("message", (d) => res(JSON.parse(d.toString()))));
+  // Queue every message as soon as the socket is created so nothing is lost before a listener attaches.
+  const open = (path) => new Promise((res, rej) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
+    ws.queue = []; ws.waiters = [];
+    ws.on("message", (d) => { const m = JSON.parse(d.toString()); const w = ws.waiters.shift(); if (w) w(m); else ws.queue.push(m); });
+    ws.on("open", () => res(ws)); ws.on("error", rej);
+  });
+  const next = (ws) => new Promise((res) => { const m = ws.queue.shift(); if (m) res(m); else ws.waiters.push(res); });
 
   const tv = await open("/tv?room=ABCD");
   await next(tv); // peers
@@ -25,11 +31,9 @@ test("relay forwards phone→tv and tv→phone within a room, isolates rooms", a
   tv.send(JSON.stringify({ t: "exercise", id: "squat" }));
   assert.deepEqual(await back, { t: "exercise", id: "squat" });
 
-  let leaked = false;
-  other.once("message", () => (leaked = true));
   phone.send(JSON.stringify({ t: "pose", reps: 4 }));
   await next(tv);
-  assert.equal(leaked, false);
+  assert.equal(other.queue.length, 0, "other room must not receive messages");
   assert.equal(rooms.size, 2);
 
   for (const ws of [tv, phone, other]) ws.close();

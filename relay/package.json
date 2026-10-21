@@ -4,7 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Tiny WebSocket relay + static host for the FormCast phone camera page.",
-  "scripts": { "start": "node server.js", "dev": "node --watch server.js", "test": "node --test" },
-  "engines": { "node": ">=20" },
-  "dependencies": { "ws": "^8.18.0" }
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test --test-timeout=15000 server.test.js counters.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
 }
