@@ -53,10 +53,13 @@ data class UiState(
     val nextTargets: Map<Exercise, Int> = emptyMap(),
     /** Demo mode when no phone is paired: synthesized reps so the TV flow can be shown on an emulator. */
     val simulated: Boolean = false,
+    /** Spoken cues through the TV's text-to-speech engine. */
+    val voice: Boolean = true,
 )
 
 class SessionViewModel(app: Application) : AndroidViewModel(app) {
     private val progress = Progress(app)
+    private val coach = Coach(app)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var relay: RelayClient? = null
@@ -70,6 +73,12 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun refreshProfileStats() {
         val p = _state.value.profile
         _state.update { it.copy(sessionsBefore = progress.sessionCount(p), lastSummary = progress.lastSummary(p)) }
+    }
+
+    fun toggleVoice() {
+        _state.update { it.copy(voice = !it.voice) }
+        coach.enabled = _state.value.voice
+        if (coach.enabled) coach.say("Voice on", force = true)
     }
 
     fun overrideRoom(code: String) {
@@ -113,6 +122,9 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         val ex = s.program?.exercises?.getOrNull(s.exerciseIndex) ?: return
         if (p.ex != ex.id) { resendExercise(); return }
         val ready = p.ready ?: true
+        val cue = p.cue ?: ""
+        if (ready && cue != s.cue && cue in Coach.SPOKEN) coach.say(cue)
+        if (ready && p.reps > s.reps && p.reps == s.target / 2 && s.target >= 6) coach.say("Halfway")
         _state.update {
             it.copy(
                 reps = p.reps, phase = p.phase ?: "", cue = p.cue ?: "", keypoints = p.kp,
@@ -138,6 +150,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             val target = progress.target(s.profile, ex)
             _state.update { it.copy(exerciseIndex = index, target = target, reps = 0, phase = "", cue = ex.cueHint, keypoints = null, form = null, avgForm = null, calib = 0f, calibrating = !it.simulated && it.phoneConnected, secondsLeft = 60, resting = false) }
             relay?.sendExercise(ex.id, ex.label)
+            coach.say("${ex.label}. Target $target. ${ex.cueHint}", force = true)
             startTimer()
             if (_state.value.simulated) startSimulation(ex, target)
         }
@@ -168,6 +181,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                     reps == target - 1 -> "Last one, full range"
                     else -> ex.cueHint
                 }
+                if (cue in Coach.SPOKEN) coach.say(cue)
                 val form = 72 + ((reps * 37) % 28) // deterministic, varied 72–99
                 _state.update { st ->
                     val avg = ((st.avgForm ?: form) * (reps - 1) + form) / reps
@@ -186,6 +200,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         val result = SetResult(ex, s.target, s.reps, 60 - s.secondsLeft, s.avgForm)
         timer?.cancel(); simJob?.cancel()
         _state.update { it.copy(resting = true, setResults = it.setResults + result, cue = if (s.reps >= s.target) "Target hit!" else "Set done") }
+        coach.say(if (s.reps >= s.target) "Target hit. Rest." else "Set done. Rest.", force = true)
         viewModelScope.launch {
             val next = progress.record(s.profile, result)
             _state.update { it.copy(nextTargets = it.nextTargets + (ex to next)) }
@@ -203,6 +218,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             progress.finishSession(s.profile, s.setResults)
             refreshProfileStats()
             _state.update { it.copy(screen = Screen.SUMMARY, resting = false) }
+            coach.say("Session complete. Nice work, ${s.profile}.", force = true)
         }
     }
 
@@ -221,6 +237,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        coach.shutdown()
         relay?.close()
         super.onCleared()
     }

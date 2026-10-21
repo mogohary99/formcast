@@ -216,6 +216,8 @@ private fun SessionScreen(s: UiState, vm: SessionViewModel) {
                 Button(onClick = { vm.skipSet() }, modifier = Modifier.focusRequester(skip)) { Text(if (s.resting) "Next" else "Finish set", fontSize = 16.sp) }
                 Spacer(Modifier.width(12.dp))
                 Button(onClick = { vm.goHome() }) { Text("End", fontSize = 16.sp) }
+                Spacer(Modifier.width(12.dp))
+                Button(onClick = { vm.toggleVoice() }) { Text(if (s.voice) "Voice: on" else "Voice: off", fontSize = 16.sp) }
             }
         }
         Spacer(Modifier.width(24.dp))
