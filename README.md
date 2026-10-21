@@ -39,7 +39,7 @@ adb shell am start -n dev.gohary.formcast/.MainActivity
 *Hosted relay* below) or a real Fire TV (Developer options → ADB debugging, `adb connect <tv-ip>`):
 
 ```bash
-./gradlew assembleDebug -PRELAY_URL=wss://formcast.<account>.workers.dev -PCAM_URL=https://formcast.<account>.workers.dev/cam/
+./gradlew assembleDebug -PRELAY_URL=wss://formcast.strongkit.workers.dev -PCAM_URL=https://formcast.strongkit.workers.dev/cam/
 ```
 
 Emulator used for the demo: Android TV (API 34, arm64), 1080p, created with
@@ -65,7 +65,7 @@ Free plan) plus the camera page served over HTTPS from Workers Static Assets.
 cd worker && npm install
 npm run dev                               # local: ws://127.0.0.1:8789 (needs Node ≥ 22 for wrangler)
 RELAY_WS=ws://127.0.0.1:8789 npm run test:live
-npx wrangler login && npm run deploy      # → https://formcast.<account>.workers.dev
+npx wrangler login && npm run deploy      # → https://formcast.strongkit.workers.dev (current deployment)
 ```
 Then build the TV app with `-PRELAY_URL=wss://…` / `-PCAM_URL=https://…/cam/` as shown above and scan the QR
 code with any phone.

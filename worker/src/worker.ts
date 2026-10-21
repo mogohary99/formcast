@@ -83,6 +83,11 @@ export class Room extends DurableObject<Env> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    // workers.dev also answers plain HTTP. Send everything to HTTPS (308 keeps the method for MCP POSTs).
+    if (url.protocol === "http:" || /"scheme":"http"/.test(request.headers.get("cf-visitor") ?? "")) {
+      url.protocol = "https:";
+      return Response.redirect(url.toString(), 308);
+    }
     if (url.pathname === "/health") {
       return new Response(JSON.stringify({ ok: true, runtime: "cloudflare-workers", relay: "durable-object", time: new Date().toISOString() }), { headers: { "content-type": "application/json" } });
     }

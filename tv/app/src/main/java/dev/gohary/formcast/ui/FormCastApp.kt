@@ -148,7 +148,10 @@ private fun PairScreen(s: UiState, vm: SessionViewModel) {
                 Spacer(Modifier.height(14.dp))
                 StatusLine(if (s.relayConnected) "Relay connected" else (s.relayError?.let { "Relay: $it" } ?: "Connecting to relay…"), if (s.relayConnected) Ok else Warn)
                 StatusLine(if (s.phoneConnected) "Phone camera connected" else "Waiting for phone…", if (s.phoneConnected) Ok else Muted)
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(8.dp))
+                // The same URL the QR encodes, so a viewer can type it (and see where the relay is hosted).
+                Text(url.removePrefix("https://").removePrefix("http://"), fontSize = 15.sp, color = Muted)
+                Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { vm.startSession(simulated = false) }, modifier = Modifier.focusRequester(startFocus)) { Text(if (s.phoneConnected) "Start workout" else "Start (waiting for phone)", fontSize = 18.sp) }
                     Button(onClick = { vm.startSession(simulated = true) }) { Text("Try without camera", fontSize = 18.sp) }
